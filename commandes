@@ -1,0 +1,250 @@
+! --- 1. CONFIGURATION VLAN IT (Stateless) ---
+ipv6 dhcp pool IT
+ dns-server 2001:EEEE:1988:3000::1
+ exit
+
+interface GigabitEthernet0/0.10
+ encapsulation dot1Q 10
+ ipv6 address FE80::1 link-local
+ ipv6 address 2001:EEEE:1988:0FFF:FFFF:FFFF:FFFF:FFFF/52
+ ipv6 dhcp server IT
+ ipv6 nd other-config-flag
+ exit
+
+! --- 2. CONFIGURATION VLAN FINANCE (Stateful) ---
+ipv6 dhcp pool FINANCE
+ address prefix 2001:EEEE:1988:1000::/52
+ dns-server 2001:EEEE:1988:3000::1
+ exit
+
+interface GigabitEthernet0/0.20
+ encapsulation dot1Q 20
+ ipv6 address FE80::1 link-local
+ ipv6 address 2001:EEEE:1988:1FFF:FFFF:FFFF:FFFF:FFFF/52
+ ipv6 dhcp server FINANCE
+ ipv6 nd managed-config-flag
+ exit
+
+! --- 3. CONFIGURATION VLAN RH (Stateful) ---
+ipv6 dhcp pool RH
+ address prefix 2001:EEEE:1988:2000::/52
+ dns-server 2001:EEEE:1988:3000::1
+ exit
+
+interface GigabitEthernet0/0.30
+ encapsulation dot1Q 30
+ ipv6 address FE80::1 link-local
+ ipv6 address 2001:EEEE:1988:2FFF:FFFF:FFFF:FFFF:FFFF/52
+ ipv6 dhcp server RH
+ ipv6 nd managed-config-flag
+ exit
+
+! --- 4. CONFIGURATION VLAN DNS (Passerelle uniquement) ---
+interface GigabitEthernet0/0.40
+ encapsulation dot1Q 40
+ ipv6 address FE80::1 link-local
+ ipv6 address 2001:EEEE:1988:3FFF:FFFF:FFFF:FFFF:FFFF/52
+ exit
+
+ ! --- Sur R1 ---
+enable
+conf t
+
+! On sélectionne l'interface connectée à WAN1 (Vérifiez si c'est g0/1 sur votre schéma)
+interface GigabitEthernet0/1
+ description VERS-WAN1
+ ipv6 address 2001:EEEE:1988:4000::1/126
+ no shutdown
+ exit
+
+! On ajoute la route par défaut (La porte de sortie universelle)
+! Cela dit : "Tout ce que tu ne connais pas, envoie-le à WAN1 (::2)"
+ipv6 route ::/0 2001:EEEE:1988:4000::2
+
+
+! wan 1
+
+ enable
+conf t
+hostname WAN1
+ipv6 unicast-routing
+
+! Interface vers R1 (Vérifiez le numéro de port sur le schéma, ex: G0/0 ou G0/1)
+interface GigabitEthernet0/1
+ description VERS-R1
+ ipv6 address 2001:EEEE:1988:4000::2/126
+ no shutdown
+ exit
+
+ ! --- Sur WAN1 ---
+enable
+conf t
+! Interface vers WAN2
+interface GigabitEthernet0/0/0
+ ipv6 address 2001:EEEE:1988:5000::1/126
+ no shutdown
+ exit
+
+! Interface vers WAN4
+interface GigabitEthernet0/1/0
+ ipv6 address 2001:EEEE:1988:8000::1/126
+ no shutdown
+ exit
+
+
+ ! --- Sur WAN2 ---
+enable
+conf t
+hostname WAN2
+ipv6 unicast-routing
+
+! Interface vers WAN1 (L'arrivée)
+interface GigabitEthernet0/0/0
+ ipv6 address 2001:EEEE:1988:5000::2/126
+ no shutdown
+ exit
+
+! Interface vers WAN3 (La suite)
+interface GigabitEthernet0/1/0
+ ipv6 address 2001:EEEE:1988:6000::1/126
+ no shutdown
+ exit
+
+
+ ! --- Sur WAN3 ---
+enable
+conf t
+hostname WAN3
+ipv6 unicast-routing
+
+! Interface vers WAN2
+interface GigabitEthernet0/1/0
+ ipv6 address 2001:EEEE:1988:6000::2/126
+ no shutdown
+ exit
+
+! Interface LAN (Vers le Serveur MAIL)
+interface GigabitEthernet0/0
+ ipv6 address 2001:EEEE:1988:7FFF:FFFF:FFFF:FFFF:FFFF/52
+ no shutdown
+ exit
+
+! Route par défaut (Pour renvoyer les réponses vers Internet via WAN2)
+ipv6 route ::/0 2001:EEEE:1988:6000::1
+
+! --- Sur WAN4 ---
+enable
+conf t
+hostname WAN4
+ipv6 unicast-routing
+
+! Interface vers WAN1
+interface GigabitEthernet0/1/0
+ ipv6 address 2001:EEEE:1988:8000::2/126
+ no shutdown
+ exit
+
+! Interface vers WAN5
+interface GigabitEthernet0/0/0
+ ipv6 address 2001:EEEE:1988:9000::1/126
+ no shutdown
+ exit
+
+ ! --- Sur WAN5 ---
+enable
+conf t
+hostname WAN5
+ipv6 unicast-routing
+
+! Interface vers WAN4
+interface GigabitEthernet0/0/0
+ ipv6 address 2001:EEEE:1988:9000::2/126
+ no shutdown
+ exit
+
+! Interface LAN (Vers le Serveur WEB)
+interface GigabitEthernet0/0
+ ipv6 address 2001:EEEE:1988:AFFF:FFFF:FFFF:FFFF:FFFF/52
+ no shutdown
+ exit
+
+! Route par défaut (Pour renvoyer les réponses vers Internet via WAN4)
+ipv6 route ::/0 2001:EEEE:1988:9000::1
+
+-------------------------------------------------
+
+! --- Sur WAN1 ---
+enable
+conf t
+
+! 1. On active OSPF
+ipv6 router ospf 1
+ router-id 1.1.1.1
+ ! On dit "Raconte mes routes statiques aux autres"
+ redistribute static
+ exit
+
+! 2. On met OSPF sur les interfaces vers les voisins
+interface GigabitEthernet0/0/0
+ ipv6 ospf 1 area 0
+ ipv6 ospf network point-to-point
+ exit
+
+interface GigabitEthernet0/1/0
+ ipv6 ospf 1 area 0
+ ipv6 ospf network point-to-point
+ exit
+
+! 3. On déclare les réseaux de R1 (IT, Finance, RH, DNS) pour qu'OSPF les connaisse
+ipv6 route 2001:EEEE:1988::/52 2001:EEEE:1988:4000::1
+ipv6 route 2001:EEEE:1988:1000::/52 2001:EEEE:1988:4000::1
+ipv6 route 2001:EEEE:1988:2000::/52 2001:EEEE:1988:4000::1
+ipv6 route 2001:EEEE:1988:3000::/52 2001:EEEE:1988:4000::1
+
+! --- Sur WAN2 ---
+enable
+conf t
+
+! 1. On active OSPF
+ipv6 router ospf 1
+ router-id 2.2.2.2
+ redistribute static
+ exit
+
+! 2. On met OSPF vers les voisins (WAN1 et WAN3)
+interface GigabitEthernet0/0/0
+ ipv6 ospf 1 area 0
+ ipv6 ospf network point-to-point
+ exit
+
+interface GigabitEthernet0/1/0
+ ipv6 ospf 1 area 0
+ ipv6 ospf network point-to-point
+ exit
+
+! 3. On déclare le réseau MAIL (qui est derrière WAN3)
+ipv6 route 2001:EEEE:1988:7000::/52 2001:EEEE:1988:6000::2
+
+! --- Sur WAN4 ---
+enable
+conf t
+
+! 1. On active OSPF
+ipv6 router ospf 1
+ router-id 3.3.3.3
+ redistribute static
+ exit
+
+! 2. On met OSPF vers les voisins (WAN1 et WAN5)
+interface GigabitEthernet0/1/0
+ ipv6 ospf 1 area 0
+ ipv6 ospf network point-to-point
+ exit
+
+interface GigabitEthernet0/0/0
+ ipv6 ospf 1 area 0
+ ipv6 ospf network point-to-point
+ exit
+
+! 3. On déclare le réseau WEB (qui est derrière WAN5)
+ipv6 route 2001:EEEE:1988:A000::/52 2001:EEEE:1988:9000::2
